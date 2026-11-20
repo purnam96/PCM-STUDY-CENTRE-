@@ -1,0 +1,223 @@
+{
+  "entities": {
+    "DiscussionThread": {
+      "title": "DiscussionThread",
+      "description": "A Physics or Chemistry study discussion thread posted by an authenticated student.",
+      "type": "object",
+      "properties": {
+        "title": {
+          "type": "string",
+          "description": "Short question or problem title (1..160 chars)."
+        },
+        "content": {
+          "type": "string",
+          "description": "Detailed doubt description, equations, or steps attempted (1..4000 chars)."
+        },
+        "subject": {
+          "type": "string",
+          "enum": ["PHYSICS", "CHEMISTRY"],
+          "description": "Curriculum subject for the question."
+        },
+        "academicClass": {
+          "type": "string",
+          "enum": ["CLASS_9", "CLASS_10"],
+          "description": "BOSEM academic class level."
+        },
+        "chapterName": {
+          "type": "string",
+          "description": "Syllabus chapter name (1..120 chars)."
+        },
+        "tags": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Up to 5 topic tags (each 1..32 chars)."
+        },
+        "authorId": {
+          "type": "string",
+          "description": "Firebase Auth UID of the thread author (immutable)."
+        },
+        "authorName": {
+          "type": "string",
+          "description": "Public display name of the student author (1..80 chars)."
+        },
+        "authorSchool": {
+          "type": "string",
+          "description": "Optional school or institution label (0..100 chars)."
+        },
+        "visibility": {
+          "type": "string",
+          "enum": ["public"],
+          "description": "Public visibility marker for student peer discussion threads."
+        },
+        "solved": {
+          "type": "boolean",
+          "description": "Whether the thread author marked a peer solution as accepted."
+        },
+        "acceptedReplyId": {
+          "type": "string",
+          "description": "Optional reply document ID marked as accepted solution."
+        },
+        "upvotesCount": {
+          "type": "integer",
+          "description": "Non-negative count of peer upvotes."
+        },
+        "repliesCount": {
+          "type": "integer",
+          "description": "Non-negative count of replies in the thread."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when thread was created."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when thread was last updated."
+        }
+      },
+      "required": [
+        "title",
+        "content",
+        "subject",
+        "academicClass",
+        "chapterName",
+        "tags",
+        "authorId",
+        "authorName",
+        "authorSchool",
+        "visibility",
+        "solved",
+        "upvotesCount",
+        "repliesCount",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "DiscussionReply": {
+      "title": "DiscussionReply",
+      "description": "A peer answer or solution posted under a Physics/Chemistry discussion thread.",
+      "type": "object",
+      "properties": {
+        "threadId": {
+          "type": "string",
+          "description": "Parent thread document ID."
+        },
+        "authorId": {
+          "type": "string",
+          "description": "Firebase Auth UID of the reply author (immutable)."
+        },
+        "authorName": {
+          "type": "string",
+          "description": "Public display name of the replying student (1..80 chars)."
+        },
+        "authorSchool": {
+          "type": "string",
+          "description": "School label of the replying student (0..100 chars)."
+        },
+        "authorBadge": {
+          "type": "string",
+          "description": "Peer role badge label (1..40 chars)."
+        },
+        "content": {
+          "type": "string",
+          "description": "Reply solution body or derivation (1..3000 chars)."
+        },
+        "visibility": {
+          "type": "string",
+          "enum": ["public"],
+          "description": "Public visibility marker for thread replies."
+        },
+        "acceptedSolution": {
+          "type": "boolean",
+          "description": "True when the thread author marks this reply as the accepted solution."
+        },
+        "upvotesCount": {
+          "type": "integer",
+          "description": "Non-negative count of helpful votes."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when reply was created."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when reply was last updated."
+        }
+      },
+      "required": [
+        "threadId",
+        "authorId",
+        "authorName",
+        "authorSchool",
+        "authorBadge",
+        "content",
+        "visibility",
+        "acceptedSolution",
+        "upvotesCount",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "UpvoteMarker": {
+      "title": "UpvoteMarker",
+      "description": "Per-user marker document ensuring a user can upvote a thread or reply at most once.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "UID of the user casting the upvote."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when upvote was recorded."
+        }
+      },
+      "required": ["userId", "createdAt"]
+    },
+    "StudyMaterial": {
+      "title": "StudyMaterial",
+      "description": "Cloud-synced study material catalog entry.",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "academicClass": { "type": "string", "enum": ["CLASS_9", "CLASS_10"] },
+        "subject": { "type": "string", "enum": ["PHYSICS", "CHEMISTRY"] },
+        "chapterName": { "type": "string" },
+        "chapterNumber": { "type": "integer" },
+        "category": { "type": "string" },
+        "uploaderId": { "type": "string" },
+        "visibility": { "type": "string", "enum": ["public"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["title", "academicClass", "subject", "chapterName", "uploaderId", "visibility"]
+    }
+  },
+  "firestore": {
+    "/threads/{threadId}": {
+      "schema": { "$ref": "#/entities/DiscussionThread" },
+      "description": "Public student discussion threads for Physics and Chemistry doubts."
+    },
+    "/threads/{threadId}/replies/{replyId}": {
+      "schema": { "$ref": "#/entities/DiscussionReply" },
+      "description": "Peer replies and solutions for a specific discussion thread."
+    },
+    "/threads/{threadId}/upvotes/{userId}": {
+      "schema": { "$ref": "#/entities/UpvoteMarker" },
+      "description": "Per-user upvote marker for a discussion thread."
+    },
+    "/threads/{threadId}/replies/{replyId}/upvotes/{userId}": {
+      "schema": { "$ref": "#/entities/UpvoteMarker" },
+      "description": "Per-user upvote marker for a peer reply."
+    },
+    "/study_materials/{materialId}": {
+      "schema": { "$ref": "#/entities/StudyMaterial" },
+      "description": "Optional cloud catalog of BOSEM Physics and Chemistry study materials."
+    }
+  }
+}

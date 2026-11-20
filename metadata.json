@@ -1,0 +1,6 @@
+{
+  "name": "PCM Study Centre",
+  "description": "BOSEM Class 9 & 10 Physics & Chemistry learning app with spaced-repetition formula flashcards, study progress PDF dossier export, peer discussion forum, calendar study planner, push notifications, syllabus notes, previous years papers, sample papers, important questions, PDF reader and offline download manager.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

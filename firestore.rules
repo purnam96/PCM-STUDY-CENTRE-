@@ -1,0 +1,279 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Default deny catch-all
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    function isSignedIn() {
+      return request.auth != null && request.auth.uid != null;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && !id.matches('.*[/\\\\].*');
+    }
+
+    function isValidString(val, minLen, maxLen) {
+      return val is string && val.size() >= minLen && val.size() <= maxLen;
+    }
+
+    // ===============================================================
+    // Domain Validators (evaluated once per write)
+    // ===============================================================
+    function isValidThread(data) {
+      return data.keys().hasAll([
+          'title', 'content', 'subject', 'academicClass', 'chapterName',
+          'tags', 'authorId', 'authorName', 'authorSchool', 'visibility',
+          'solved', 'upvotesCount', 'repliesCount', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'title', 'content', 'subject', 'academicClass', 'chapterName',
+          'tags', 'authorId', 'authorName', 'authorSchool', 'visibility',
+          'solved', 'acceptedReplyId', 'upvotesCount', 'repliesCount',
+          'createdAt', 'updatedAt'
+        ])
+        && isValidString(data.title, 1, 160)
+        && isValidString(data.content, 1, 4000)
+        && data.subject in ['PHYSICS', 'CHEMISTRY']
+        && data.academicClass in ['CLASS_9', 'CLASS_10']
+        && isValidString(data.chapterName, 1, 120)
+        && data.tags is list && data.tags.size() <= 5
+        && isValidString(data.authorId, 1, 128)
+        && isValidString(data.authorName, 1, 80)
+        && data.authorSchool is string && data.authorSchool.size() <= 100
+        && data.visibility == 'public'
+        && data.solved is bool
+        && (!('acceptedReplyId' in data) || (data.acceptedReplyId is string && data.acceptedReplyId.size() <= 128))
+        && data.upvotesCount is int && data.upvotesCount >= 0
+        && data.repliesCount is int && data.repliesCount >= 0
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidReply(data, threadId) {
+      return data.keys().hasAll([
+          'threadId', 'authorId', 'authorName', 'authorSchool', 'authorBadge',
+          'content', 'visibility', 'acceptedSolution', 'upvotesCount',
+          'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'threadId', 'authorId', 'authorName', 'authorSchool', 'authorBadge',
+          'content', 'visibility', 'acceptedSolution', 'upvotesCount',
+          'createdAt', 'updatedAt'
+        ])
+        && data.threadId == threadId
+        && isValidString(data.authorId, 1, 128)
+        && isValidString(data.authorName, 1, 80)
+        && data.authorSchool is string && data.authorSchool.size() <= 100
+        && isValidString(data.authorBadge, 1, 40)
+        && isValidString(data.content, 1, 3000)
+        && data.visibility == 'public'
+        && data.acceptedSolution is bool
+        && data.upvotesCount is int && data.upvotesCount >= 0
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidUpvoteMarker(data, uid) {
+      return data.keys().hasAll(['userId', 'createdAt'])
+        && data.keys().hasOnly(['userId', 'createdAt'])
+        && data.userId == uid
+        && data.createdAt is timestamp
+        && data.createdAt <= request.time;
+    }
+
+    function isValidStudyMaterial(data) {
+      return data.keys().hasAll([
+          'title', 'academicClass', 'subject', 'chapterName', 'uploaderId', 'visibility'
+        ])
+        && isValidString(data.title, 1, 200)
+        && data.academicClass in ['CLASS_9', 'CLASS_10']
+        && data.subject in ['PHYSICS', 'CHEMISTRY']
+        && isValidString(data.chapterName, 1, 160)
+        && isValidString(data.uploaderId, 1, 128)
+        && data.visibility == 'public';
+    }
+
+    // ===============================================================
+    // Discussion Threads
+    // ===============================================================
+    match /threads/{threadId} {
+      allow get: if isSignedIn() && resource.data.visibility == 'public';
+      allow list: if isSignedIn() && resource.data.visibility == 'public';
+
+      allow create: if isSignedIn()
+        && isValidId(threadId)
+        && request.resource.data.authorId == request.auth.uid
+        && request.resource.data.solved == false
+        && !('acceptedReplyId' in request.resource.data)
+        && request.resource.data.upvotesCount == 0
+        && request.resource.data.repliesCount == 0
+        && request.resource.data.createdAt <= request.time
+        && request.resource.data.updatedAt <= request.time
+        && isValidThread(request.resource.data);
+
+      allow update: if isSignedIn()
+        && request.resource.data.authorId == resource.data.authorId
+        && request.resource.data.visibility == resource.data.visibility
+        && request.resource.data.createdAt == resource.data.createdAt
+        && request.resource.data.updatedAt <= request.time
+        && isValidThread(request.resource.data)
+        && (
+          // Action 1: Author edits thread content or marks solved status
+          (
+            resource.data.authorId == request.auth.uid
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+              'title', 'content', 'subject', 'academicClass', 'chapterName',
+              'tags', 'solved', 'acceptedReplyId', 'updatedAt'
+            ])
+          )
+          ||
+          // Action 2: Any signed-in student toggles their own upvote marker atomically
+          (
+            request.resource.data.diff(resource.data).affectedKeys().hasOnly(['upvotesCount', 'updatedAt'])
+            && (
+              (
+                request.resource.data.upvotesCount == resource.data.upvotesCount + 1
+                && !exists(/databases/$(database)/documents/threads/$(threadId)/upvotes/$(request.auth.uid))
+                && existsAfter(/databases/$(database)/documents/threads/$(threadId)/upvotes/$(request.auth.uid))
+              )
+              ||
+              (
+                request.resource.data.upvotesCount == resource.data.upvotesCount - 1
+                && resource.data.upvotesCount >= 1
+                && exists(/databases/$(database)/documents/threads/$(threadId)/upvotes/$(request.auth.uid))
+                && !existsAfter(/databases/$(database)/documents/threads/$(threadId)/upvotes/$(request.auth.uid))
+              )
+            )
+          )
+          ||
+          // Action 3: Posting or deleting a reply updates repliesCount by +1 or -1
+          (
+            request.resource.data.diff(resource.data).affectedKeys().hasOnly(['repliesCount', 'updatedAt'])
+            && (
+              request.resource.data.repliesCount == resource.data.repliesCount + 1
+              || (
+                resource.data.repliesCount >= 1
+                && request.resource.data.repliesCount == resource.data.repliesCount - 1
+              )
+            )
+          )
+        );
+
+      allow delete: if isSignedIn()
+        && resource.data.authorId == request.auth.uid;
+
+      // Thread Upvotes Subcollection
+      match /upvotes/{userId} {
+        allow get: if isSignedIn() && userId == request.auth.uid;
+        allow list: if false;
+
+        allow create: if isSignedIn()
+          && userId == request.auth.uid
+          && isValidUpvoteMarker(request.resource.data, userId)
+          && exists(/databases/$(database)/documents/threads/$(threadId));
+
+        allow update: if false;
+
+        allow delete: if isSignedIn()
+          && userId == request.auth.uid;
+      }
+
+      // Thread Replies Subcollection
+      match /replies/{replyId} {
+        allow get: if isSignedIn() && resource.data.visibility == 'public';
+        allow list: if isSignedIn() && resource.data.visibility == 'public';
+
+        allow create: if isSignedIn()
+          && isValidId(replyId)
+          && exists(/databases/$(database)/documents/threads/$(threadId))
+          && request.resource.data.authorId == request.auth.uid
+          && request.resource.data.acceptedSolution == false
+          && request.resource.data.upvotesCount == 0
+          && request.resource.data.createdAt <= request.time
+          && request.resource.data.updatedAt <= request.time
+          && isValidReply(request.resource.data, threadId);
+
+        allow update: if isSignedIn()
+          && request.resource.data.authorId == resource.data.authorId
+          && request.resource.data.threadId == resource.data.threadId
+          && request.resource.data.visibility == resource.data.visibility
+          && request.resource.data.createdAt == resource.data.createdAt
+          && request.resource.data.updatedAt <= request.time
+          && isValidReply(request.resource.data, threadId)
+          && (
+            // Action 1: Thread author marks/unmarks a reply as acceptedSolution
+            (
+              request.resource.data.diff(resource.data).affectedKeys().hasOnly(['acceptedSolution', 'updatedAt'])
+              && get(/databases/$(database)/documents/threads/$(threadId)).data.authorId == request.auth.uid
+            )
+            ||
+            // Action 2: Any signed-in student toggles their own reply upvote atomically
+            (
+              request.resource.data.diff(resource.data).affectedKeys().hasOnly(['upvotesCount', 'updatedAt'])
+              && (
+                (
+                  request.resource.data.upvotesCount == resource.data.upvotesCount + 1
+                  && !exists(/databases/$(database)/documents/threads/$(threadId)/replies/$(replyId)/upvotes/$(request.auth.uid))
+                  && existsAfter(/databases/$(database)/documents/threads/$(threadId)/replies/$(replyId)/upvotes/$(request.auth.uid))
+                )
+                ||
+                (
+                  request.resource.data.upvotesCount == resource.data.upvotesCount - 1
+                  && resource.data.upvotesCount >= 1
+                  && exists(/databases/$(database)/documents/threads/$(threadId)/replies/$(replyId)/upvotes/$(request.auth.uid))
+                  && !existsAfter(/databases/$(database)/documents/threads/$(threadId)/replies/$(replyId)/upvotes/$(request.auth.uid))
+                )
+              )
+            )
+          );
+
+        allow delete: if isSignedIn()
+          && resource.data.authorId == request.auth.uid;
+
+        // Reply Upvotes Subcollection
+        match /upvotes/{userId} {
+          allow get: if isSignedIn() && userId == request.auth.uid;
+          allow list: if false;
+
+          allow create: if isSignedIn()
+            && userId == request.auth.uid
+            && isValidUpvoteMarker(request.resource.data, userId)
+            && exists(/databases/$(database)/documents/threads/$(threadId)/replies/$(replyId));
+
+          allow update: if false;
+
+          allow delete: if isSignedIn()
+            && userId == request.auth.uid;
+        }
+      }
+    }
+
+    // ===============================================================
+    // Study Materials Catalog (Cloud Sync)
+    // ===============================================================
+    match /study_materials/{materialId} {
+      allow get: if isSignedIn() && resource.data.visibility == 'public';
+      allow list: if isSignedIn() && resource.data.visibility == 'public';
+
+      allow create: if isSignedIn()
+        && isValidId(materialId)
+        && isValidStudyMaterial(request.resource.data)
+        && request.resource.data.uploaderId == request.auth.uid;
+
+      allow update: if isSignedIn()
+        && resource.data.uploaderId == request.auth.uid
+        && isValidStudyMaterial(request.resource.data)
+        && request.resource.data.uploaderId == resource.data.uploaderId
+        && request.resource.data.visibility == resource.data.visibility;
+
+      allow delete: if isSignedIn()
+        && resource.data.uploaderId == request.auth.uid;
+    }
+  }
+}
